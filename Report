@@ -1,0 +1,17 @@
+DATA lv_url TYPE char255.
+DATA lo_http_helper TYPE REF TO zcl_akb_tdd_blog.
+
+CONSTANTS: cv_apigithub_url TYPE string VALUE 'https://api.github.com/repos/',
+           cv_apigithub_sfx TYPE string VALUE '?ref=main',
+           cv_apigithub_content TYPE string VALUE '/contents/'.
+
+SELECTION-SCREEN: BEGIN OF BLOCK b2 WITH FRAME TITLE TEXT-002.
+  PARAMETERS p_accnt TYPE char30 LOWER CASE DEFAULT 'akmal-kilichbekov'.
+  PARAMETERS p_repos TYPE char30 LOWER CASE DEFAULT 'TTDBlog'.
+  PARAMETERS p_folder TYPE char20 LOWER CASE DEFAULT 'Create'.
+SELECTION-SCREEN : END OF BLOCK b2.
+
+lv_url = |{ cv_apigithub_url }{ p_accnt }/{ p_repos }/contents/{ p_folder }/{ cv_apigithub_sfx }|.
+
+lo_http_helper = NEW #( ).
+lo_http_helper->execute_http_request( lv_url ).
