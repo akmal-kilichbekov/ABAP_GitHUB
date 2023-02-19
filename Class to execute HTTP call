@@ -1,0 +1,109 @@
+CLASS zcl_akb_tdd_blog DEFINITION
+  PUBLIC
+  FINAL
+  CREATE PUBLIC .
+
+  PUBLIC SECTION.
+    TYPES:
+      BEGIN OF ty_pfiles,
+        filename TYPE char100,
+        filepath TYPE char255,
+      END OF ty_pfiles .
+
+    TYPES:
+      BEGIN OF ty_git_file,
+        name         TYPE string,
+        download_url TYPE string,
+      END OF ty_git_file .
+    TYPES:
+      tt_git_file TYPE STANDARD TABLE OF ty_git_file WITH DEFAULT KEY .
+
+    TYPES:
+      BEGIN OF file,
+        file_name    TYPE string,
+        file_content TYPE string,
+      END OF file .
+    TYPES:
+      tt_files TYPE SORTED TABLE OF file WITH UNIQUE KEY file_name .
+
+    METHODS execute_http_request
+      IMPORTING !iv_url                 TYPE char255
+      RETURNING VALUE(rv_response_data) TYPE string .
+
+  PROTECTED SECTION.
+  PRIVATE SECTION.
+    DATA mt_files   TYPE tt_files .
+
+    METHODS call_web_request
+      IMPORTING iv_url             TYPE char255
+      RETURNING VALUE(rv_response) TYPE string.
+ENDCLASS.
+
+
+
+CLASS ZCL_AKB_TDD_BLOG IMPLEMENTATION.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Private Method ZCL_AKB_TDD_BLOG->CALL_WEB_REQUEST
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IV_URL                         TYPE        CHAR255
+* | [<-()] RV_RESPONSE                    TYPE        STRING
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD call_web_request.
+    DATA lt_request_header TYPE /iwfnd/sutil_property_t.
+
+    " Get client proxy class instance
+    DATA(lo_http_prx) = /iwfnd/cl_sutil_client_proxy=>get_instance( ).
+
+    " Prepare header data
+    lt_request_header = VALUE #( ( name = if_http_header_fields_sap=>request_method value = 'GET' )
+                                 ( name = '~request_uri'  value = iv_url )
+                                 ( name = 'accept'        value = 'application/json' ) ).
+
+    " Execute HTTP request
+    lo_http_prx->web_request( EXPORTING it_request_header   = lt_request_header
+                                        iv_reuse_connection = abap_true
+                              IMPORTING ev_status_code      = DATA(ev_status_code)
+                                        ev_content_type     = DATA(lv_content_type)
+                                        et_response_header  = DATA(lt_response_header)
+                                        ev_response_body    = DATA(lv_response_body) ).
+
+    " Get the response
+    rv_response = cl_abap_codepage=>convert_from( source = lv_response_body ).
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Public Method ZCL_AKB_TDD_BLOG->EXECUTE_HTTP_REQUEST
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IV_URL                         TYPE        CHAR255
+* | [<-()] RV_RESPONSE_DATA               TYPE        STRING
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD execute_http_request.
+    DATA lt_git_file TYPE STANDARD TABLE OF ty_pfiles.
+    DATA lt_deserialized_files TYPE tt_git_file.
+
+    " Deserialize the response
+    /ui2/cl_json=>deserialize( EXPORTING json        = call_web_request( iv_url )
+                                         pretty_name = /ui2/cl_json=>pretty_mode-camel_case
+                               CHANGING  data        = lt_deserialized_files ).
+
+    " Map to normal internal table
+    lt_git_file = CORRESPONDING #( lt_deserialized_files MAPPING filename = name
+                                                                 filepath = download_url ).
+
+    " Get the all files content in chosen folder
+    LOOP AT lt_git_file ASSIGNING FIELD-SYMBOL(<fs_git_file>).
+      DATA(lv_response_data) = call_web_request( <fs_git_file>-filepath  ).
+
+      " Remove PO number
+      FIND FIRST OCCURRENCE OF '{' IN lv_response_data MATCH OFFSET DATA(lv_index).
+
+      lv_response_data = substring( val = lv_response_data off = lv_index len = strlen( lv_response_data ) - lv_index ).
+
+      mt_files = VALUE #( BASE mt_files ( file_name = <fs_git_file>-filename file_content = lv_response_data ) ).
+    ENDLOOP.
+
+  ENDMETHOD.
+ENDCLASS.
